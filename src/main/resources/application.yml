@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: product-service
+  cloud:
+    config:
+      enabled: false
+  data:
+    mongodb:
+      uri: mongodb+srv://fahadhassan2131_db_user:fahad2131g@shopzone.l7arjgb.mongodb.net/shopzone_products?retryWrites=true&w=majority&appName=shopzone
+
+server:
+  port: 8083
+
+jwt:
+  secret: myShopZoneSuperSecretKeyForJWTTokenGenerationAndValidation2024
+  expiration: 86400000
+
+cloudinary:
+  cloud-name: ddnhknpcn
+  api-key: 586681465716255
+  api-secret: 15IgyiUw8apv_eh331FtgwzQHJM
