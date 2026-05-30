@@ -1,35 +1,8 @@
-name: Auth Service CI/CD
+name: Order Service CI/CD
 
 on:
   push:
     branches: [ order-service ]
-
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Run tests
-        run: mvn test
-
-      - name: Build JAR
-        run: mvn package -DskipTests
-
-      - name: Build Docker image
-        run: docker build -t shopzone-auth-service .name: Auth Service CI/CD
-
-on:
-  push:
-    branches: [ main ]
 
 jobs:
   build-and-test:
