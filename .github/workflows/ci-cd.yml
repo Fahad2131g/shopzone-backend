@@ -2,7 +2,7 @@ name: Auth Service CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [ user-service ]
 
 jobs:
   build-and-test:
