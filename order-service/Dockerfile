@@ -7,5 +7,6 @@ RUN mvn package -DskipTests
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
+COPY src/main/resources/kafka.truststore.jks /app/kafka.truststore.jks
 EXPOSE 8084
 ENTRYPOINT ["java", "-jar", "app.jar"]
