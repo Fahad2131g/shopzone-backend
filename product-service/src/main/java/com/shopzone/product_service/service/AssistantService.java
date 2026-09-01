@@ -87,9 +87,10 @@ public class AssistantService {
             List<?> parts = (List<?>) content.get("parts");
             Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
             return (String) firstPart.get("text");
-        } catch (Exception e) {
-            return "Sorry, I'm having trouble answering right now. Please try again shortly.";
-        }
+       } catch (Exception e) {
+    e.printStackTrace();
+    return "ERROR: " + e.getMessage();
+}
     }
 
     private List<Map<String, Object>> buildConversation(AssistantRequest request, String systemInstruction) {
