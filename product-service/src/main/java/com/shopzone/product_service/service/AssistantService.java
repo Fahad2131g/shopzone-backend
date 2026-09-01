@@ -4,9 +4,7 @@ import com.shopzone.product_service.dto.AssistantRequest;
 import com.shopzone.product_service.model.Product;
 import com.shopzone.product_service.repository.ProductRepository;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.List;
@@ -27,19 +25,8 @@ public class AssistantService {
     @Value("${gemini.model:gemini-3.6-flash}")
     private String geminiModel;
 
-    private final RestClient restClient = RestClient.builder()
-            .requestFactory(clientRequestFactory())
-            .build();
-
     public AssistantService(ProductRepository productRepository) {
         this.productRepository = productRepository;
-    }
-
-    private static org.springframework.http.client.ClientHttpRequestFactory clientRequestFactory() {
-        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(5000);
-        factory.setReadTimeout(15000);
-        return factory;
     }
 
     public String getAnswer(AssistantRequest request) {
@@ -73,7 +60,7 @@ public class AssistantService {
                 )
         );
 
-                        try {
+        try {
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
@@ -89,6 +76,11 @@ public class AssistantService {
 
             java.net.http.HttpResponse<String> httpResponse = client.send(
                     httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+            // TEMP DEBUG - remove after diagnosing
+            if (true) {
+                return "RAW (status " + httpResponse.statusCode() + "): " + httpResponse.body();
+            }
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             Map<?, ?> response = mapper.readValue(httpResponse.body(), Map.class);
