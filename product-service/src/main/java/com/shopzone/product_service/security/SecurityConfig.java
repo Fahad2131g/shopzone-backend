@@ -32,7 +32,7 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/products/public/**").permitAll()
+                .requestMatchers("/api/products/public/**", "/api/assistant/**").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session
