@@ -73,13 +73,17 @@ public class AssistantService {
                 )
         );
 
-        try {
-            Map<?, ?> response = restClient.post()
+                try {
+            String rawResponse = restClient.post()
                     .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
                     .body(requestBody)
                     .retrieve()
-                    .body(Map.class);
+                    .body(String.class);
+
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<?, ?> response = mapper.readValue(rawResponse, Map.class);
 
             List<?> candidates = (List<?>) response.get("candidates");
             Map<?, ?> firstCandidate = (Map<?, ?>) candidates.get(0);
@@ -87,10 +91,10 @@ public class AssistantService {
             List<?> parts = (List<?>) content.get("parts");
             Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
             return (String) firstPart.get("text");
-       } catch (Exception e) {
-    e.printStackTrace();
-    return "ERROR: " + e.getMessage();
-}
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR: " + e.getMessage();
+        }
     }
 
     private List<Map<String, Object>> buildConversation(AssistantRequest request, String systemInstruction) {
