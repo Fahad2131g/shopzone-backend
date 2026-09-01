@@ -73,17 +73,25 @@ public class AssistantService {
                 )
         );
 
-                try {
-            String rawResponse = restClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(requestBody)
-                    .retrieve()
-                    .body(String.class);
+                        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            String jsonBody = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
+
+            java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(15))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            java.net.http.HttpResponse<String> httpResponse = client.send(
+                    httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<?, ?> response = mapper.readValue(rawResponse, Map.class);
+            Map<?, ?> response = mapper.readValue(httpResponse.body(), Map.class);
 
             List<?> candidates = (List<?>) response.get("candidates");
             Map<?, ?> firstCandidate = (Map<?, ?>) candidates.get(0);
