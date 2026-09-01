@@ -79,8 +79,8 @@ public class AssistantService {
             java.net.http.HttpResponse<String> httpResponse = client.send(
                     httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
-                        if (httpResponse.statusCode() != 200) {
-                return "DEBUG STATUS " + httpResponse.statusCode() + ": " + httpResponse.body();
+                                 if (httpResponse.statusCode() != 200) {
+                return FALLBACK_MESSAGE;
             }
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -106,8 +106,8 @@ public class AssistantService {
                 return "I couldn't generate a response to that. Could you rephrase your question?";
             }
             return text.toString();
-                } catch (Exception e) {
-            return "DEBUG EXCEPTION: " + e.getClass().getName() + " - " + e.getMessage();
+                        } catch (Exception e) {
+            return FALLBACK_MESSAGE;
         }
     }
 
