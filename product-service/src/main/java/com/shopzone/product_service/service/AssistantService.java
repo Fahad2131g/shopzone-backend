@@ -16,6 +16,8 @@ public class AssistantService {
 
     private static final int MAX_PRODUCTS_IN_CONTEXT = 60;
     private static final int MAX_HISTORY_TURNS = 6;
+    private static final String FALLBACK_MESSAGE =
+            "Sorry, I'm having trouble answering right now. Please try again shortly.";
 
     private final ProductRepository productRepository;
 
@@ -56,7 +58,8 @@ public class AssistantService {
                 "contents", contents,
                 "generationConfig", Map.of(
                         "temperature", 0.4,
-                        "maxOutputTokens", 300
+                        "maxOutputTokens", 500,
+                        "thinkingConfig", Map.of("thinkingBudget", 0)
                 )
         );
 
@@ -77,23 +80,35 @@ public class AssistantService {
             java.net.http.HttpResponse<String> httpResponse = client.send(
                     httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
 
-            // TEMP DEBUG - remove after diagnosing
-            if (true) {
-                return "RAW (status " + httpResponse.statusCode() + "): " + httpResponse.body();
+            if (httpResponse.statusCode() != 200) {
+                return FALLBACK_MESSAGE;
             }
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             Map<?, ?> response = mapper.readValue(httpResponse.body(), Map.class);
 
             List<?> candidates = (List<?>) response.get("candidates");
+            if (candidates == null || candidates.isEmpty()) {
+                return "I couldn't generate a response to that. Could you rephrase your question?";
+            }
             Map<?, ?> firstCandidate = (Map<?, ?>) candidates.get(0);
+
             Map<?, ?> content = (Map<?, ?>) firstCandidate.get("content");
+            if (content == null) {
+                return "I couldn't generate a response to that. Could you rephrase your question?";
+            }
             List<?> parts = (List<?>) content.get("parts");
+            if (parts == null || parts.isEmpty()) {
+                return "I couldn't generate a response to that. Could you rephrase your question?";
+            }
             Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
-            return (String) firstPart.get("text");
+            Object text = firstPart.get("text");
+            if (text == null) {
+                return "I couldn't generate a response to that. Could you rephrase your question?";
+            }
+            return text.toString();
         } catch (Exception e) {
-            e.printStackTrace();
-            return "ERROR: " + e.getMessage();
+            return FALLBACK_MESSAGE;
         }
     }
 
