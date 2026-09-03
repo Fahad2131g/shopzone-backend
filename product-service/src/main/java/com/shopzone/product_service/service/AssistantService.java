@@ -15,9 +15,11 @@ import java.util.stream.Collectors;
 public class AssistantService {
 
     private static final int MAX_PRODUCTS_IN_CONTEXT = 60;
-    private static final int MAX_HISTORY_TURNS = 6;
+    private static final int MAX_HISTORY_TURNS = 10;
     private static final String FALLBACK_MESSAGE =
-            "Sorry, I'm having trouble answering right now. Please try again shortly.";
+            "Sorry, I'm getting a lot of questions right now — please try again in a few seconds.";
+    private static final String PARSE_FALLBACK_MESSAGE =
+            "I couldn't quite generate a response to that. Could you rephrase your question?";
 
     private final ProductRepository productRepository;
 
@@ -26,6 +28,13 @@ public class AssistantService {
 
     @Value("${gemini.model:gemini-3.6-flash}")
     private String geminiModel;
+
+    private final java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     public AssistantService(ProductRepository productRepository) {
         this.productRepository = productRepository;
@@ -37,78 +46,115 @@ public class AssistantService {
             products = products.subList(0, MAX_PRODUCTS_IN_CONTEXT);
         }
 
-        String catalog = products.stream()
-                .map(p -> String.format("- %s ($%.2f) | %s | %s",
-                        p.getName(), p.getPrice(), p.getCategory(), p.getDescription()))
-                .collect(Collectors.joining("\n"));
+        String catalog = products.isEmpty()
+                ? "(No products currently in stock.)"
+                : products.stream()
+                    .map(p -> String.format("- %s ($%.2f) | %s | %s",
+                            p.getName(), p.getPrice(), p.getCategory(), p.getDescription()))
+                    .collect(Collectors.joining("\n"));
 
         String systemInstruction =
-                "You are ShopZone's friendly shopping assistant. Only recommend items from the catalog below. " +
-                "Be concise (2-4 sentences max unless listing products). Always include exact product name and price " +
-                "when recommending. If nothing matches, say so honestly and suggest browsing categories instead.\n\n" +
+                "You are ShopZone's shopping assistant — knowledgeable, friendly, and genuinely helpful, like a good in-store sales associate.\n\n" +
+                "WHAT YOU CAN DO:\n" +
+                "- Recommend products from the catalog below based on price, category, or description\n" +
+                "- Compare products (e.g. price, features) when asked\n" +
+                "- Filter and sort mentally (e.g. \"cheapest first\", \"under $X\", \"in category Y\")\n" +
+                "- Answer general questions about what's available or in stock\n" +
+                "- Have a natural, multi-turn conversation — remember what was discussed earlier in this chat\n\n" +
+                "WHAT YOU CANNOT DO (be upfront and helpful about this, don't just refuse):\n" +
+                "- You cannot place orders, add items to a cart, or process payments yourself. " +
+                "If asked to do this, explain that you can help them find the right product, " +
+                "but they need to click \"Add to Cart\" on the product page themselves to complete the purchase.\n" +
+                "- You only know about the products listed below — you have no access to order history, account details, or shipping info.\n\n" +
+                "STYLE:\n" +
+                "- Be concise but complete — a few sentences is fine, don't ramble, but don't cut yourself short either\n" +
+                "- Always mention exact product names and prices when recommending something\n" +
+                "- If nothing in the catalog matches, say so honestly and suggest what IS available instead\n" +
+                "- If a question is ambiguous, ask a brief clarifying question rather than guessing\n\n" +
                 "CATALOG:\n" + catalog;
 
         List<Map<String, Object>> contents = buildConversation(request, systemInstruction);
 
-        String url = String.format(
-                "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
-                geminiModel, geminiApiKey);
-
         Map<String, Object> requestBody = Map.of(
                 "contents", contents,
                 "generationConfig", Map.of(
-                        "temperature", 0.4,
+                        "temperature", 0.5,
                         "maxOutputTokens", 1024
                 )
         );
 
+        String jsonBody;
         try {
-            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
-            String jsonBody = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(requestBody);
-
-            java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
-                    .uri(java.net.URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(15))
-                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
-
-            java.net.http.HttpResponse<String> httpResponse = client.send(
-                    httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
-
-                                 if (httpResponse.statusCode() != 200) {
-                return FALLBACK_MESSAGE;
-            }
-
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<?, ?> response = mapper.readValue(httpResponse.body(), Map.class);
-
-            List<?> candidates = (List<?>) response.get("candidates");
-            if (candidates == null || candidates.isEmpty()) {
-                return "I couldn't generate a response to that. Could you rephrase your question?";
-            }
-            Map<?, ?> firstCandidate = (Map<?, ?>) candidates.get(0);
-
-            Map<?, ?> content = (Map<?, ?>) firstCandidate.get("content");
-            if (content == null) {
-                return "I couldn't generate a response to that. Could you rephrase your question?";
-            }
-            List<?> parts = (List<?>) content.get("parts");
-            if (parts == null || parts.isEmpty()) {
-                return "I couldn't generate a response to that. Could you rephrase your question?";
-            }
-            Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
-            Object text = firstPart.get("text");
-            if (text == null) {
-                return "I couldn't generate a response to that. Could you rephrase your question?";
-            }
-            return text.toString();
-                        } catch (Exception e) {
+            jsonBody = mapper.writeValueAsString(requestBody);
+        } catch (Exception e) {
             return FALLBACK_MESSAGE;
         }
+
+        // Try up to 2 times total, in case of a transient failure (e.g. brief rate limit or network blip)
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String result = callGemini(jsonBody);
+                if (result != null) {
+                    return result;
+                }
+            } catch (Exception ignored) {
+                // fall through to retry / final fallback
+            }
+            if (attempt == 1) {
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        return FALLBACK_MESSAGE;
+    }
+
+    /**
+     * Calls Gemini once. Returns the answer text, PARSE_FALLBACK_MESSAGE if the response
+     * shape was unexpected, or null if the call itself failed (caller may retry).
+     */
+    private String callGemini(String jsonBody) throws Exception {
+        String url = String.format(
+                "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+                geminiModel, geminiApiKey);
+
+        java.net.http.HttpRequest httpRequest = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(15))
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        java.net.http.HttpResponse<String> httpResponse =
+                httpClient.send(httpRequest, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        if (httpResponse.statusCode() != 200) {
+            // Signal "try again" for transient errors (429 rate limit, 5xx server issues)
+            return null;
+        }
+
+        Map<?, ?> response = mapper.readValue(httpResponse.body(), Map.class);
+
+        List<?> candidates = (List<?>) response.get("candidates");
+        if (candidates == null || candidates.isEmpty()) {
+            return PARSE_FALLBACK_MESSAGE;
+        }
+        Map<?, ?> firstCandidate = (Map<?, ?>) candidates.get(0);
+
+        Map<?, ?> content = (Map<?, ?>) firstCandidate.get("content");
+        if (content == null) {
+            return PARSE_FALLBACK_MESSAGE;
+        }
+        List<?> parts = (List<?>) content.get("parts");
+        if (parts == null || parts.isEmpty()) {
+            return PARSE_FALLBACK_MESSAGE;
+        }
+        Map<?, ?> firstPart = (Map<?, ?>) parts.get(0);
+        Object text = firstPart.get("text");
+        return text == null ? PARSE_FALLBACK_MESSAGE : text.toString();
     }
 
     private List<Map<String, Object>> buildConversation(AssistantRequest request, String systemInstruction) {
